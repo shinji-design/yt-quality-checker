@@ -345,13 +345,17 @@ async def analyze_video(channel_url: str, video_url: str):
     yield {"step": "browser", "progress": 10, "message": "ブラウザを起動中..."}
 
     async with async_playwright() as p:
+        # ヘッドレスモードで動画フレームを取得するため "new" headless を使用
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,  # headless=False + --headless=new で新ヘッドレスモードを有効化
             args=[
+                '--headless=new',
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-blink-features=AutomationControlled',
-                '--lang=ja-JP'
+                '--lang=ja-JP',
+                '--autoplay-policy=no-user-gesture-required',
+                '--disable-background-media-suspend',
             ]
         )
         context = await browser.new_context(
@@ -442,8 +446,10 @@ async def analyze_video(channel_url: str, video_url: str):
                 return
 
             diffs = result.get('diffs', [])
+            completed = result.get('completed', False)
+            reason = result.get('reason', '')
             if len(diffs) < 50:
-                yield {"step": "error", "message": "動画の分析に十分なデータが取得できませんでした。動画が正常に再生できない可能性があります。"}
+                yield {"step": "error", "message": f"動画の分析に十分なデータが取得できませんでした。取得フレーム数={len(diffs)} 完了={completed} 理由={reason}"}
                 await browser.close()
                 return
 
