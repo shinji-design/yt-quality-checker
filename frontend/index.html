@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>動画クオリティ・チェッカー</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 入力画面 -->
+  <section id="input-screen" class="screen active">
+    <header class="hero">
+      <h1>🎬 動画クオリティ・チェッカー</h1>
+      <p class="lead">あなたの動画、収益化に通る品質ですか?</p>
+      <p class="sub">3分の動画を分析して、合格水準かをお伝えします</p>
+    </header>
+
+    <form id="check-form" class="form">
+      <div class="instruction-box">
+        <p class="instruction-text">
+          <strong>下のどちらか1つを入力してください</strong>
+        </p>
+        <p class="instruction-sub">
+          ・チャンネル全体を見たい場合 → チャンネルURL（最新動画をチェックします）<br>
+          ・特定の動画を見たい場合 → 動画URL
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="channel-url">① チャンネルURL</label>
+        <input type="url" id="channel-url" name="channel-url"
+               placeholder="https://www.youtube.com/@your-channel">
+        <p class="hint">※ チャンネルのトップページのURLを貼り付けてください<br>※ 最新の動画を自動でチェックします</p>
+      </div>
+
+      <div class="or-divider">または</div>
+
+      <div class="field">
+        <label for="video-url">② 動画URL</label>
+        <input type="url" id="video-url" name="video-url"
+               placeholder="https://youtu.be/xxxxxxxx">
+        <p class="hint">※ 特定の動画をチェックしたい場合はこちら</p>
+      </div>
+
+      <button type="submit" class="btn-primary" id="submit-btn">
+        チェックを始める
+      </button>
+
+      <p class="note">※ チェックには5分ほどかかります。<br>このページを閉じずにお待ちください。</p>
+    </form>
+
+    <footer class="disclaimer">
+      <h3>大事なお知らせ</h3>
+      <p>
+        このチェックは「動画の動き方」だけを見ています。<br>
+        ・動画のテンポやリズム<br>
+        ・画面の変化のバランス<br>
+        ・動きの種類の豊富さ<br>
+        <br>
+        以下はチェックしていません：<br>
+        ・内容の善し悪し ・著作権の問題 ・規約に反する内容<br>
+        <br>
+        このチェックは目安です。実際の収益化審査の結果を保証するものではありません。
+      </p>
+    </footer>
+  </section>
+
+  <!-- 分析中画面 -->
+  <section id="loading-screen" class="screen">
+    <div class="loading">
+      <h2>⏳ チェック中です</h2>
+      <p class="loading-message" id="loading-message">処理を開始しています...</p>
+
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <p class="progress-text"><span id="progress-percent">0</span>%</p>
+
+      <p class="loading-note">
+        ※ 動画を最初の3分まで分析します<br>
+        ※ 約5分かかります。ページを閉じないでください
+      </p>
+    </div>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="result-screen" class="screen">
+    <header class="result-header">
+      <h2>📊 チェック結果</h2>
+      <p class="video-title" id="video-title"></p>
+    </header>
+
+    <div class="judgment-box" id="judgment-box">
+      <div class="judgment-icon" id="judgment-icon">🟡</div>
+      <h3 class="judgment-label" id="judgment-label">もうすぐ合格</h3>
+      <div class="total-score">
+        <span id="total-score">65</span>
+        <span class="of100">／ 100点</span>
+      </div>
+      <div class="total-bar">
+        <div class="total-bar-fill" id="total-bar-fill"></div>
+      </div>
+      <p class="judgment-message" id="judgment-message"></p>
+    </div>
+
+    <h3 class="section-title">📋 5つのチェック項目</h3>
+    <div class="score-list" id="score-list"></div>
+
+    <h3 class="section-title" id="advice-title" style="display:none;">🔧 直したほうが良いこと</h3>
+    <div class="advice-list" id="advice-list"></div>
+
+    <div class="action-buttons">
+      <button class="btn-secondary" onclick="window.print()">🖨️ 印刷する</button>
+      <button class="btn-secondary" onclick="location.reload()">🔄 もう一度チェックする</button>
+    </div>
+
+    <footer class="result-footer">
+      <p>
+        このチェック結果は、動画の動き方の特徴のみを判定したものです。<br>
+        実際の収益化審査の結果を保証するものではありません。
+      </p>
+    </footer>
+  </section>
+
+  <!-- エラー画面 -->
+  <section id="error-screen" class="screen">
+    <div class="error-box">
+      <h2>❌ エラーが発生しました</h2>
+      <p class="error-message" id="error-message">エラーの内容</p>
+      <button class="btn-primary" onclick="location.reload()">最初からやり直す</button>
+    </div>
+  </section>
+
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
