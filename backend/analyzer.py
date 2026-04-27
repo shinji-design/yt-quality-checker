@@ -1,107 +1,22 @@
 """
-動画分析ロジック
+動画分析ロジック（YouTubeストーリーボード方式）
+
+Playwright不要・httpxとPillowのみで動作。
+動画を再生せず、YouTube公式のストーリーボード画像から
+動画各時点のフレームを取得してピクセル差を計算する。
 """
 import asyncio
 import re
-from playwright.async_api import async_playwright
+import json
+import httpx
+from io import BytesIO
+from PIL import Image
 
 
-CAPTURE_SCRIPT = """
-async () => {
-    const player = document.querySelector('#movie_player');
-    const v = document.querySelector('video');
-    if (!player || !v) return {error: 'プレーヤーが見つかりません', debug: {hasPlayer: !!player, hasVideo: !!v}};
-
-    // 初期診断情報
-    const initDiag = {
-        videoDuration: v.duration,
-        videoReadyState: v.readyState,
-        videoNetworkState: v.networkState,
-        videoSrc: v.src ? 'has-src' : 'no-src',
-        videoWidth: v.videoWidth,
-        videoHeight: v.videoHeight,
-        playerExists: typeof player.playVideo === 'function',
-    };
-
-    try { player.mute(); } catch(e) {}
-    try { v.muted = true; } catch(e) {}
-
-    let playError = null;
-    try {
-        player.setPlaybackRate(2);
-        player.playVideo();
-        await new Promise(r => setTimeout(r, 3000));
-    } catch(e) { playError = 'phase1:' + e.message; }
-
-    try {
-        player.seekTo(0);
-        player.setPlaybackRate(4);
-        const playPromise = v.play();
-        if (playPromise) await playPromise.catch(e => { playError = 'phase2:' + e.message; });
-    } catch(e) {
-        return {error: '動画再生に失敗: ' + e.message, debug: initDiag};
-    }
-
-    await new Promise(r => setTimeout(r, 2000));
-    const playDiag = {
-        currentTime: v.currentTime,
-        paused: v.paused,
-        ended: v.ended,
-        playError: playError,
-        readyStateAfter: v.readyState,
-    };
-
-    if (v.currentTime === 0 && v.paused) {
-        return {error: '動画が再生されません', debug: {init: initDiag, play: playDiag}};
-    }
-
-    return new Promise((resolve) => {
-        const targets = [];
-        for (let t = 0; t <= 180; t++) targets.push(t);
-        const diffs = [];
-        let idx = 0;
-        let prev = null;
-        const startTime = Date.now();
-        const maxWait = 240000;
-
-        const interval = setInterval(() => {
-            try {
-                if (Date.now() - startTime > maxWait) {
-                    clearInterval(interval);
-                    try { player.pauseVideo(); player.setPlaybackRate(1); } catch(e) {}
-                    resolve({diffs, completed: false, reason: 'timeout'});
-                    return;
-                }
-                if (idx >= targets.length || v.currentTime > 185) {
-                    clearInterval(interval);
-                    try { player.pauseVideo(); player.setPlaybackRate(1); } catch(e) {}
-                    resolve({diffs, completed: true});
-                    return;
-                }
-                const tNow = v.currentTime;
-                while (idx < targets.length && targets[idx] <= tNow) {
-                    const c = document.createElement('canvas');
-                    c.width = 80; c.height = 45;
-                    const ctx = c.getContext('2d');
-                    try {
-                        ctx.drawImage(v, 0, 0, 80, 45);
-                        const px = ctx.getImageData(0, 0, 80, 45).data;
-                        if (prev) {
-                            let s = 0;
-                            for (let i = 0; i < px.length; i += 4) {
-                                s += Math.abs(px[i]-prev[i]) + Math.abs(px[i+1]-prev[i+1]) + Math.abs(px[i+2]-prev[i+2]);
-                            }
-                            diffs.push(s/(px.length/4*3));
-                        }
-                        prev = px;
-                    } catch(e) {}
-                    idx++;
-                }
-            } catch(e) {}
-        }, 300);
-    });
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'ja-JP,ja;q=0.9',
 }
-"""
 
 
 def extract_video_id(url: str):
@@ -110,34 +25,120 @@ def extract_video_id(url: str):
 
 
 def is_channel_url(url: str) -> bool:
-    """チャンネルURLかどうかを判定"""
     if not url:
         return False
     return any(p in url for p in ['/channel/', '/@', '/c/', '/user/'])
 
 
-async def get_latest_video_id(page, channel_url: str):
-    """チャンネルURLから最新動画のIDを取得"""
-    # /videos を末尾に追加
+async def get_latest_video_id(channel_url: str):
+    """チャンネルURLから最新動画IDを取得"""
     url = channel_url.rstrip('/')
     if not url.endswith('/videos'):
         url = url + '/videos'
 
-    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    await page.wait_for_timeout(3000)
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        r = await client.get(url, headers=HEADERS)
+        html = r.text
 
-    # HTMLから最新の動画IDを抽出
-    html = await page.content()
     matches = re.findall(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
-    if not matches:
+    return matches[0] if matches else None
+
+
+async def fetch_player_response(video_id: str):
+    """YouTube動画ページから ytInitialPlayerResponse を取得"""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        r = await client.get(url, headers=HEADERS)
+        html = r.text
+
+    m = re.search(r'var ytInitialPlayerResponse\s*=\s*(\{.+?\});', html)
+    if not m:
+        m = re.search(r'ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*var', html)
+    if not m:
         return None
-    return matches[0]
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def parse_storyboard_spec(spec: str):
+    """spec文字列を解析"""
+    parts = spec.split('|')
+    base_url = parts[0]
+    levels = []
+    for i, level_data in enumerate(parts[1:]):
+        fields = level_data.split('#')
+        if len(fields) < 8:
+            continue
+        try:
+            level = {
+                'level': i,
+                'width': int(fields[0]),
+                'height': int(fields[1]),
+                'count': int(fields[2]),
+                'cols': int(fields[3]),
+                'rows': int(fields[4]),
+                'interval_ms': int(fields[5]),
+                'name': fields[6],
+                'sigh': fields[7],
+            }
+            level['frames_per_image'] = level['cols'] * level['rows']
+            level['total_images'] = (level['count'] + level['frames_per_image'] - 1) // level['frames_per_image']
+            levels.append(level)
+        except (ValueError, IndexError):
+            continue
+    return base_url, levels
+
+
+def build_image_urls(base_url: str, level: dict):
+    urls = []
+    for m in range(level['total_images']):
+        url = base_url.replace('$L', str(level['level'])).replace('$N', level['name']).replace('$M', str(m))
+        url += '&sigh=' + level['sigh']
+        urls.append(url)
+    return urls
+
+
+async def download_image(client: httpx.AsyncClient, url: str):
+    try:
+        r = await client.get(url, timeout=30)
+        if r.status_code != 200:
+            return None
+        return Image.open(BytesIO(r.content))
+    except Exception:
+        return None
+
+
+def extract_frames_from_montage(img: Image.Image, level: dict):
+    frames = []
+    fw = level['width']
+    fh = level['height']
+    for row in range(level['rows']):
+        for col in range(level['cols']):
+            left = col * fw
+            top = row * fh
+            try:
+                frame = img.crop((left, top, left + fw, top + fh))
+                frames.append(frame)
+            except Exception:
+                pass
+    return frames
+
+
+def calc_pixel_diff(frame_a: Image.Image, frame_b: Image.Image, target_w=80, target_h=45):
+    """既存ロジック互換のピクセル差計算"""
+    a = frame_a.resize((target_w, target_h)).convert('RGB')
+    b = frame_b.resize((target_w, target_h)).convert('RGB')
+    a_pix = a.tobytes()
+    b_pix = b.tobytes()
+    total = sum(abs(a_pix[i] - b_pix[i]) for i in range(len(a_pix)))
+    return total / (target_w * target_h * 3)
 
 
 def calc_stats(diffs):
-    if not diffs or len(diffs) < 50:
+    if not diffs or len(diffs) < 5:
         return None
-
     n = len(diffs)
     bands = [
         sum(1 for d in diffs if d < 2),
@@ -149,7 +150,8 @@ def calc_stats(diffs):
         sum(1 for d in diffs if 60 <= d < 100),
         sum(1 for d in diffs if d >= 100),
     ]
-
+    # 使用バンド数の閾値はフレーム数に応じて調整（5以上が原則だが少サンプルでは1以上）
+    band_threshold = max(1, n // 20)
     return {
         'n': n,
         'mean': sum(diffs) / n,
@@ -158,7 +160,7 @@ def calc_stats(diffs):
         'midRange': sum(1 for d in diffs if 20 <= d < 60) / n * 100,
         'eventRate': sum(1 for d in diffs if d >= 20) / n * 100,
         'maxBand': max(bands) / n * 100,
-        'usedBands': sum(1 for b in bands if b >= 5),
+        'usedBands': sum(1 for b in bands if b >= band_threshold),
     }
 
 
@@ -313,46 +315,26 @@ def make_advice(stats, scores):
 
 def make_judgment(total):
     if total >= 85:
-        return {
-            "level": "good",
-            "icon": "🟢",
-            "label": "合格水準",
-            "message": "動画の中身は十分な品質です。",
-        }
+        return {"level": "good", "icon": "🟢", "label": "合格水準",
+                "message": "動画の中身は十分な品質です。"}
     elif total >= 70:
-        return {
-            "level": "near",
-            "icon": "🟡",
-            "label": "ほぼ合格",
-            "message": "あと少しで合格水準です。軽い直しで問題ありません。",
-        }
+        return {"level": "near", "icon": "🟡", "label": "ほぼ合格",
+                "message": "あと少しで合格水準です。軽い直しで問題ありません。"}
     elif total >= 55:
-        return {
-            "level": "border",
-            "icon": "🟡",
-            "label": "もうすぐ合格",
-            "message": "あと少しの直しで、合格の見込みが大きく上がります。",
-        }
+        return {"level": "border", "icon": "🟡", "label": "もうすぐ合格",
+                "message": "あと少しの直しで、合格の見込みが大きく上がります。"}
     elif total >= 40:
-        return {
-            "level": "warn",
-            "icon": "🟠",
-            "label": "要改善",
-            "message": "いくつかの点を直す必要があります。",
-        }
+        return {"level": "warn", "icon": "🟠", "label": "要改善",
+                "message": "いくつかの点を直す必要があります。"}
     else:
-        return {
-            "level": "ng",
-            "icon": "🔴",
-            "label": "大幅な作り直しが必要",
-            "message": "現状では合格水準に届きません。",
-        }
+        return {"level": "ng", "icon": "🔴", "label": "大幅な作り直しが必要",
+                "message": "現状では合格水準に届きません。"}
 
 
 async def analyze_video(channel_url: str, video_url: str):
+    """メイン分析関数（非同期ジェネレータ）"""
     yield {"step": "init", "progress": 5, "message": "処理を開始しています..."}
 
-    # 入力チェック：どちらか一方は必須
     has_video = bool(video_url and video_url.strip())
     has_channel = bool(channel_url and channel_url.strip())
 
@@ -360,7 +342,6 @@ async def analyze_video(channel_url: str, video_url: str):
         yield {"step": "error", "message": "動画URLまたはチャンネルURLのどちらかを入力してください。"}
         return
 
-    # 動画URLが指定されていればそれを優先
     video_id = None
     if has_video:
         video_id = extract_video_id(video_url)
@@ -368,147 +349,101 @@ async def analyze_video(channel_url: str, video_url: str):
             yield {"step": "error", "message": "動画URLが正しくありません。再度ご確認ください。"}
             return
 
-    yield {"step": "browser", "progress": 10, "message": "ブラウザを起動中..."}
+    if not video_id:
+        if not is_channel_url(channel_url):
+            yield {"step": "error", "message": "チャンネルURLが正しくありません。"}
+            return
+        yield {"step": "find_latest", "progress": 15, "message": "チャンネルから最新動画を取得中..."}
+        video_id = await get_latest_video_id(channel_url)
+        if not video_id:
+            yield {"step": "error", "message": "チャンネルから動画が見つかりませんでした。"}
+            return
 
-    async with async_playwright() as p:
-        # ヘッドレスモードで動画フレームを取得するため "new" headless を使用
-        browser = await p.chromium.launch(
-            headless=False,  # headless=False + --headless=new で新ヘッドレスモードを有効化
-            args=[
-                '--headless=new',
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled',
-                '--lang=ja-JP',
-                '--autoplay-policy=no-user-gesture-required',
-                '--disable-background-media-suspend',
-            ]
-        )
-        context = await browser.new_context(
-            viewport={'width': 1280, 'height': 720},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            locale='ja-JP'
-        )
-        # YouTubeのCookie同意を回避
-        await context.add_cookies([
-            {'name': 'CONSENT', 'value': 'YES+', 'url': 'https://www.youtube.com'},
-            {'name': 'SOCS', 'value': 'CAI', 'url': 'https://www.youtube.com'},
-            {'name': 'PREF', 'value': 'hl=ja&gl=JP', 'url': 'https://www.youtube.com'},
-        ])
-        # Bot検出回避（webdriver等を隠す）
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['ja-JP', 'ja', 'en']});
-            window.chrome = {runtime: {}};
-        """)
-        page = await context.new_page()
+    yield {"step": "fetch_meta", "progress": 25, "message": "動画情報を取得中..."}
 
-        try:
-            # 動画URLがなければ、チャンネルから最新動画を取得
-            if not video_id:
-                if not is_channel_url(channel_url):
-                    yield {"step": "error", "message": "チャンネルURLが正しくありません。「youtube.com/@xxx」「youtube.com/channel/xxx」の形式で入力してください。"}
-                    await browser.close()
-                    return
+    try:
+        player_response = await fetch_player_response(video_id)
+    except Exception as e:
+        yield {"step": "error", "message": f"動画情報の取得に失敗しました: {str(e)[:100]}"}
+        return
 
-                yield {"step": "find_latest", "progress": 15, "message": "チャンネルから最新動画を取得中..."}
-                video_id = await get_latest_video_id(page, channel_url)
-                if not video_id:
-                    yield {"step": "error", "message": "チャンネルから動画が見つかりませんでした。URLをご確認ください。"}
-                    await browser.close()
-                    return
+    if not player_response:
+        yield {"step": "error", "message": "動画情報を解析できませんでした。"}
+        return
 
-            yield {"step": "navigate", "progress": 20, "message": "動画ページにアクセス中..."}
-            await page.goto(
-                f"https://www.youtube.com/watch?v={video_id}",
-                wait_until="domcontentloaded",
-                timeout=30000
-            )
+    title = player_response.get('videoDetails', {}).get('title', '（タイトル不明）')[:80]
 
-            # #movie_player要素が出現するのを待つ（最大20秒）
-            player_found = False
-            try:
-                await page.wait_for_selector('#movie_player', timeout=20000)
-                player_found = True
-            except:
-                pass
+    storyboards = player_response.get('storyboards', {})
+    spec_renderer = storyboards.get('playerStoryboardSpecRenderer', {})
+    spec = spec_renderer.get('spec')
 
-            await page.wait_for_timeout(3000)
+    if not spec:
+        yield {"step": "error", "message": "この動画はストーリーボードに対応していません。"}
+        return
 
-            # プレーヤーが見つからない場合は詳細情報を取得
-            if not player_found:
-                try:
-                    current_url = page.url
-                    page_title = await page.title()
-                    body_snippet = await page.evaluate('document.body.innerText.substring(0, 200)')
-                    yield {
-                        "step": "error",
-                        "message": f"動画プレーヤーを読み込めませんでした。URL={current_url[:60]} / Title={page_title[:50]} / 内容={body_snippet[:100]}"
-                    }
-                    await browser.close()
-                    return
-                except Exception as e:
-                    yield {"step": "error", "message": f"動画プレーヤーが見つかりません: {str(e)[:100]}"}
-                    await browser.close()
-                    return
+    yield {"step": "parse_spec", "progress": 35, "message": "フレーム情報を解析中..."}
 
-            try:
-                title = await page.title()
-                title = title.replace(" - YouTube", "")[:80]
-            except:
-                title = "（タイトル取得不可）"
+    base_url, levels = parse_storyboard_spec(spec)
+    if not levels:
+        yield {"step": "error", "message": "フレーム情報の解析に失敗しました。"}
+        return
 
-            yield {"step": "capture_start", "progress": 30, "message": "動画の動きを分析しています...（5分ほどお待ちください）"}
+    # 最高品質レベルを使用
+    level = levels[-1]
 
-            result = await asyncio.wait_for(
-                page.evaluate(CAPTURE_SCRIPT),
-                timeout=300
-            )
+    # 180秒分のフレーム数を計算
+    interval_sec = max(level['interval_ms'] / 1000, 1)
+    frames_for_180s = min(int(180 / interval_sec) + 1, level['count'])
+    images_needed = (frames_for_180s + level['frames_per_image'] - 1) // level['frames_per_image']
 
-            if result.get('error'):
-                yield {"step": "error", "message": result['error']}
-                await browser.close()
-                return
+    urls = build_image_urls(base_url, level)[:images_needed]
 
-            diffs = result.get('diffs', [])
-            completed = result.get('completed', False)
-            reason = result.get('reason', '')
-            if len(diffs) < 50:
-                yield {"step": "error", "message": f"動画の分析に十分なデータが取得できませんでした。取得フレーム数={len(diffs)} 完了={completed} 理由={reason}"}
-                await browser.close()
-                return
+    yield {"step": "download", "progress": 50, "message": f"フレーム画像を取得中...（{len(urls)}枚）"}
 
-            yield {"step": "calculate", "progress": 90, "message": "結果を計算中..."}
+    all_frames = []
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True, headers=HEADERS) as client:
+        # 並列ダウンロード
+        results = await asyncio.gather(*[download_image(client, u) for u in urls])
+        for img in results:
+            if img is None:
+                continue
+            all_frames.extend(extract_frames_from_montage(img, level))
 
-            stats = calc_stats(diffs)
-            scores = calc_5_scores(stats)
-            advice = make_advice(stats, scores)
-            judgment = make_judgment(scores['total'])
+    all_frames = all_frames[:frames_for_180s]
 
-            await browser.close()
+    if len(all_frames) < 10:
+        yield {"step": "error", "message": f"十分なフレームが取得できませんでした（{len(all_frames)}フレーム）"}
+        return
 
-            yield {
-                "step": "done",
-                "progress": 100,
-                "result": {
-                    "title": title,
-                    "video_id": video_id,
-                    "scores": scores,
-                    "judgment": judgment,
-                    "advice": advice,
-                    "frames_analyzed": len(diffs)
-                }
-            }
-        except asyncio.TimeoutError:
-            yield {"step": "error", "message": "分析に時間がかかりすぎました。動画が長すぎるか、再生に問題がある可能性があります。"}
-            try:
-                await browser.close()
-            except:
-                pass
-        except Exception as e:
-            yield {"step": "error", "message": f"エラーが発生しました: {str(e)[:200]}"}
-            try:
-                await browser.close()
-            except:
-                pass
+    yield {"step": "calculate", "progress": 80, "message": "ピクセル差を計算中..."}
+
+    diffs = []
+    prev = None
+    for f in all_frames:
+        if prev is not None:
+            diffs.append(calc_pixel_diff(prev, f))
+        prev = f
+
+    stats = calc_stats(diffs)
+    if not stats:
+        yield {"step": "error", "message": "統計計算に失敗しました。"}
+        return
+
+    yield {"step": "score", "progress": 95, "message": "スコアを計算中..."}
+
+    scores = calc_5_scores(stats)
+    advice = make_advice(stats, scores)
+    judgment = make_judgment(scores['total'])
+
+    yield {
+        "step": "done",
+        "progress": 100,
+        "result": {
+            "title": title,
+            "video_id": video_id,
+            "scores": scores,
+            "judgment": judgment,
+            "advice": advice,
+            "frames_analyzed": len(diffs)
+        }
+    }
