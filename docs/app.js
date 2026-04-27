@@ -342,11 +342,14 @@ function decodeHashData() {
 function setupBookmarklet() {
   const reportUrl = new URL('', window.location.href).href;
 
+  // ブックマークレット本体（再生方式 + setInterval）
+  // pause状態のシークではフレームが更新されないため、4倍速再生中に1秒ごとにフレームを取得する
   const bookmarkletCode = 'javascript:' + encodeURIComponent(`(function(){
   if(!location.hostname.includes('youtube.com')||!location.pathname.startsWith('/watch')){
     alert('YouTubeの動画ページで実行してください');return;
   }
   var v=document.querySelector('video');
+  var player=document.querySelector('#movie_player');
   if(!v||!v.duration){alert('動画が読み込まれていません。少し待ってから再度クリックしてください。');return;}
   var REPORT_URL=${JSON.stringify(reportUrl)};
   var ui=document.createElement('div');
@@ -355,35 +358,58 @@ function setupBookmarklet() {
   document.body.appendChild(ui);
   var msg=function(t){ui.querySelector('#ytq_msg').textContent=t;};
   var bar=function(p){ui.querySelector('#ytq_bar').style.width=p+'%';};
-  v.pause();v.muted=true;
-  var diffs=[];var prev=null;
-  (async function(){
+  v.muted=true;
+  function setRate(r){if(player&&player.setPlaybackRate){try{player.setPlaybackRate(r);}catch(e){}}try{v.playbackRate=r;}catch(e){}}
+  function play(){if(player&&player.playVideo){try{player.playVideo();}catch(e){}}else{try{v.play();}catch(e){}}}
+  function pause(){if(player&&player.pauseVideo){try{player.pauseVideo();}catch(e){}}else{try{v.pause();}catch(e){}}}
+  function seek(t){if(player&&player.seekTo){try{player.seekTo(t,true);}catch(e){v.currentTime=t;}}else{v.currentTime=t;}}
+  seek(0);
+  setRate(4);
+  play();
+  msg('動画を再生して分析中...（4倍速・約45秒）');
+  var diffs=[];var prev=null;var idx=0;var targets=[];for(var t=0;t<=180;t++)targets.push(t);
+  var startTime=Date.now();var lastDoneTime=Date.now();var lastDone=0;
+  var captureFrame=function(){
+    var c=document.createElement('canvas');c.width=80;c.height=45;
+    var ctx=c.getContext('2d');
+    try{ctx.drawImage(v,0,0,80,45);}catch(e){return null;}
+    try{return ctx.getImageData(0,0,80,45).data;}catch(e){return null;}
+  };
+  var iv=setInterval(function(){
     try{
-      for(var t=0;t<=180;t++){
-        v.currentTime=t;
-        await new Promise(function(r){var d=false;var h=function(){if(!d){d=true;v.removeEventListener('seeked',h);r();}};v.addEventListener('seeked',h);setTimeout(h,1500);});
-        await new Promise(function(r){setTimeout(r,200);});
-        var c=document.createElement('canvas');c.width=80;c.height=45;
-        var ctx=c.getContext('2d');
-        try{ctx.drawImage(v,0,0,80,45);}catch(e){msg('フレーム取得失敗(CORS?): '+e.message);return;}
-        var px=ctx.getImageData(0,0,80,45).data;
-        if(prev){var s=0;for(var i=0;i<px.length;i+=4)s+=Math.abs(px[i]-prev[i])+Math.abs(px[i+1]-prev[i+1])+Math.abs(px[i+2]-prev[i+2]);diffs.push(s/(px.length/4*3));}
-        prev=px;
-        msg('解析中... '+(t+1)+'/181');
-        bar(Math.round((t+1)/181*100));
+      if(idx>=targets.length||v.currentTime>185){
+        clearInterval(iv);pause();setRate(1);
+        if(diffs.length<5){msg('❌ 取得フレーム不足('+diffs.length+'). 動画を一度クリックしてから再度お試しください。');return;}
+        msg('✅ 解析完了 ('+diffs.length+'差分)');bar(100);
+        var titleEl=document.querySelector('h1.style-scope.ytd-watch-metadata, h1.title.ytd-video-primary-info-renderer, h1.ytd-watch-metadata');
+        var title=titleEl?titleEl.innerText.trim():(document.title.replace(/ - YouTube$/,''));
+        var vid=new URLSearchParams(location.search).get('v')||'';
+        var data={title:title,videoId:vid,diffs:diffs.map(function(d){return Math.round(d*100)/100;}),capturedAt:Date.now()};
+        var hash=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+        var fullUrl=REPORT_URL+'#'+hash;
+        ui.querySelector('#ytq_done').style.display='block';
+        ui.querySelector('#ytq_view').onclick=function(){window.open(fullUrl,'_blank');};
+        ui.querySelector('#ytq_close').onclick=function(){ui.remove();};
+        return;
       }
-      msg('✅ 解析完了 ('+diffs.length+'差分)');bar(100);
-      var titleEl=document.querySelector('h1.style-scope.ytd-watch-metadata, h1.title.ytd-video-primary-info-renderer, h1.ytd-watch-metadata');
-      var title=titleEl?titleEl.innerText.trim():(document.title.replace(/ - YouTube$/,''));
-      var vid=new URLSearchParams(location.search).get('v')||'';
-      var data={title:title,videoId:vid,diffs:diffs.map(function(d){return Math.round(d*100)/100;}),capturedAt:Date.now()};
-      var hash=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-      var fullUrl=REPORT_URL+'#'+hash;
-      ui.querySelector('#ytq_done').style.display='block';
-      ui.querySelector('#ytq_view').onclick=function(){window.open(fullUrl,'_blank');};
-      ui.querySelector('#ytq_close').onclick=function(){ui.remove();};
-    }catch(e){msg('エラー: '+e.message);}
-  })();
+      // 進捗が止まっていないかチェック（タブ非アクティブ等で再生が止まる場合）
+      if(idx>lastDone){lastDone=idx;lastDoneTime=Date.now();}
+      else if(Date.now()-lastDoneTime>15000){
+        clearInterval(iv);pause();setRate(1);
+        msg('⚠️ 動画再生が止まりました。タブを最前面にして再度お試しください。');
+        return;
+      }
+      var tNow=v.currentTime;
+      while(idx<targets.length&&targets[idx]<=tNow){
+        var px=captureFrame();
+        if(!px){clearInterval(iv);msg('❌ フレーム取得失敗');return;}
+        if(prev){var s=0;for(var i=0;i<px.length;i+=4)s+=Math.abs(px[i]-prev[i])+Math.abs(px[i+1]-prev[i+1])+Math.abs(px[i+2]-prev[i+2]);diffs.push(s/(px.length/4*3));}
+        prev=px;idx++;
+        msg('解析中... '+idx+'/181');
+        bar(Math.round(idx/181*100));
+      }
+    }catch(e){clearInterval(iv);msg('エラー: '+e.message);}
+  },300);
 })();`);
 
   const link = document.getElementById('bookmarklet-link');
