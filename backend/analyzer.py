@@ -347,19 +347,31 @@ async def analyze_video(channel_url: str, video_url: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
+            args=[
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-blink-features=AutomationControlled',
+                '--lang=ja-JP'
+            ]
         )
         context = await browser.new_context(
             viewport={'width': 1280, 'height': 720},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             locale='ja-JP'
         )
-        # YouTubeのCookie同意を回避するためのCookieをプリセット
+        # YouTubeのCookie同意を回避
         await context.add_cookies([
-            {'name': 'CONSENT', 'value': 'YES+', 'domain': '.youtube.com', 'path': '/'},
-            {'name': 'SOCS', 'value': 'CAI', 'domain': '.youtube.com', 'path': '/'},
-            {'name': 'PREF', 'value': 'hl=ja&gl=JP', 'domain': '.youtube.com', 'path': '/'},
+            {'name': 'CONSENT', 'value': 'YES+', 'url': 'https://www.youtube.com'},
+            {'name': 'SOCS', 'value': 'CAI', 'url': 'https://www.youtube.com'},
+            {'name': 'PREF', 'value': 'hl=ja&gl=JP', 'url': 'https://www.youtube.com'},
         ])
+        # Bot検出回避（webdriver等を隠す）
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ja-JP', 'ja', 'en']});
+            window.chrome = {runtime: {}};
+        """)
         page = await context.new_page()
 
         try:
@@ -384,13 +396,32 @@ async def analyze_video(channel_url: str, video_url: str):
                 timeout=30000
             )
 
-            # #movie_player要素が出現するのを待つ（最大15秒）
+            # #movie_player要素が出現するのを待つ（最大20秒）
+            player_found = False
             try:
-                await page.wait_for_selector('#movie_player', timeout=15000)
+                await page.wait_for_selector('#movie_player', timeout=20000)
+                player_found = True
             except:
                 pass
 
-            await page.wait_for_timeout(5000)
+            await page.wait_for_timeout(3000)
+
+            # プレーヤーが見つからない場合は詳細情報を取得
+            if not player_found:
+                try:
+                    current_url = page.url
+                    page_title = await page.title()
+                    body_snippet = await page.evaluate('document.body.innerText.substring(0, 200)')
+                    yield {
+                        "step": "error",
+                        "message": f"動画プレーヤーを読み込めませんでした。URL={current_url[:60]} / Title={page_title[:50]} / 内容={body_snippet[:100]}"
+                    }
+                    await browser.close()
+                    return
+                except Exception as e:
+                    yield {"step": "error", "message": f"動画プレーヤーが見つかりません: {str(e)[:100]}"}
+                    await browser.close()
+                    return
 
             try:
                 title = await page.title()
