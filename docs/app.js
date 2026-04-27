@@ -1,16 +1,22 @@
 /**
- * 動画クオリティ・チェッカー（静的サイト版）
+ * 動画クオリティ・チェッカー（Chrome拡張機能連携版）
  *
- * - 入力画面：ブックマークレット利用案内
- * - 結果画面：URLハッシュからブックマークレットが渡したデータを読み、
- *   180秒分の差分→5スコア→判定→アドバイスを描画する
- *
- * バックエンド不要。ユーザーのブラウザでYouTube動画を直接シークするため
- * データセンターIPのbot検出問題は発生しない。
+ * - 拡張機能の存在を検出
+ * - 未インストールならインストール案内画面を表示
+ * - インストール済みなら URL入力 → 拡張機能に分析依頼 → 結果表示
  */
 
 // ============================================================
-// スコアリング（analyzer.py からの移植）
+// 設定
+// ============================================================
+
+// Chrome Web Store 公開後に正式URLへ差し替える
+const CHROME_WEBSTORE_URL = 'https://chromewebstore.google.com/';
+const EXT_TAG = 'YT_QC_EXT';
+const EXT_DETECT_TIMEOUT = 800;  // ms
+
+// ============================================================
+// スコアリング（既存ロジックを維持）
 // ============================================================
 
 function calcStats(diffs) {
@@ -152,56 +158,11 @@ function makeJudgment(total) {
 // ============================================================
 
 const SCORE_ITEMS = {
-  balance: {
-    label: '① 動きのバランス', icon: '🎬',
-    desc: {
-      good: '動画全体の動きの活発さがちょうど良いバランスです。',
-      near: '動きのバランスは概ね良好です。',
-      border: '動きのバランスがやや偏っています。',
-      warn: '動きの量が多すぎる、または少なすぎます。',
-      ng: '動きのバランスが大きく崩れています。',
-    }
-  },
-  still: {
-    label: '② 止まっている時間', icon: '📌',
-    desc: {
-      good: '画面が止まっている時間と動いている時間のバランスが良いです。',
-      near: '止まっている時間の長さは概ね適切です。',
-      border: '止まっている時間がやや多めです。',
-      warn: '止まっている時間が長すぎる、または短すぎます。',
-      ng: '画面がほとんど動かない、または動きすぎています。',
-    }
-  },
-  scene: {
-    label: '③ 場面切替の回数', icon: '🔄',
-    desc: {
-      good: '場面が変わるペースがちょうど良いです。',
-      near: '場面切替のペースは適切です。',
-      border: '場面切替の回数がやや多い／少なめです。',
-      warn: '場面切替が多すぎる、または少なすぎます。',
-      ng: '場面切替のリズムに問題があります。',
-    }
-  },
-  variety: {
-    label: '④ 動きの種類の多さ', icon: '🎨',
-    desc: {
-      good: '色々な種類の動きが使われていて、見飽きません。',
-      near: '動きの種類は十分にあります。',
-      border: '動きの種類がやや少なめです。',
-      warn: '動きの種類が足りていません。',
-      ng: 'いつも同じような動かし方になっています。',
-    }
-  },
-  concentrate: {
-    label: '⑤ 同じ動きの集中度', icon: '📊',
-    desc: {
-      good: '偏りがなく、バランスよく動きが分散されています。',
-      near: '動きの分散は良好です。',
-      border: '1種類の動きにやや偏っています。',
-      warn: '同じ動きが長く続く部分があります。',
-      ng: '1つのパターンに大きく偏っています。',
-    }
-  }
+  balance: { label: '① 動きのバランス', icon: '🎬', desc: { good: '動画全体の動きの活発さがちょうど良いバランスです。', near: '動きのバランスは概ね良好です。', border: '動きのバランスがやや偏っています。', warn: '動きの量が多すぎる、または少なすぎます。', ng: '動きのバランスが大きく崩れています。' } },
+  still: { label: '② 止まっている時間', icon: '📌', desc: { good: '画面が止まっている時間と動いている時間のバランスが良いです。', near: '止まっている時間の長さは概ね適切です。', border: '止まっている時間がやや多めです。', warn: '止まっている時間が長すぎる、または短すぎます。', ng: '画面がほとんど動かない、または動きすぎています。' } },
+  scene: { label: '③ 場面切替の回数', icon: '🔄', desc: { good: '場面が変わるペースがちょうど良いです。', near: '場面切替のペースは適切です。', border: '場面切替の回数がやや多い／少なめです。', warn: '場面切替が多すぎる、または少なすぎます。', ng: '場面切替のリズムに問題があります。' } },
+  variety: { label: '④ 動きの種類の多さ', icon: '🎨', desc: { good: '色々な種類の動きが使われていて、見飽きません。', near: '動きの種類は十分にあります。', border: '動きの種類がやや少なめです。', warn: '動きの種類が足りていません。', ng: 'いつも同じような動かし方になっています。' } },
+  concentrate: { label: '⑤ 同じ動きの集中度', icon: '📊', desc: { good: '偏りがなく、バランスよく動きが分散されています。', near: '動きの分散は良好です。', border: '1種類の動きにやや偏っています。', warn: '同じ動きが長く続く部分があります。', ng: '1つのパターンに大きく偏っています。' } }
 };
 
 function getLevel(score) {
@@ -224,9 +185,7 @@ function showScreen(name) {
 
 function escapeHtml(s) {
   if (s == null) return '';
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function showResult(data) {
@@ -241,8 +200,7 @@ function showResult(data) {
 
   showScreen('result');
 
-  const titleStr = data.title ? `分析した動画：${data.title}` : '';
-  document.getElementById('video-title').textContent = titleStr;
+  document.getElementById('video-title').textContent = data.title ? `分析した動画：${data.title}` : '';
 
   const judgmentBox = document.getElementById('judgment-box');
   judgmentBox.className = `judgment-box ${judgment.level}`;
@@ -254,10 +212,7 @@ function showResult(data) {
   setTimeout(() => {
     const fill = document.getElementById('total-bar-fill');
     fill.style.width = scores.total + '%';
-    fill.style.background = {
-      good: '#27ae60', near: '#16a085', border: '#f1c40f',
-      warn: '#e67e22', ng: '#e74c3c'
-    }[judgment.level];
+    fill.style.background = { good: '#27ae60', near: '#16a085', border: '#f1c40f', warn: '#e67e22', ng: '#e74c3c' }[judgment.level];
   }, 100);
 
   const scoreList = document.getElementById('score-list');
@@ -325,109 +280,124 @@ function showError(msg) {
   document.getElementById('error-message').textContent = msg;
 }
 
-function decodeHashData() {
-  const hash = location.hash.slice(1);
-  if (!hash) return null;
-  try {
-    return JSON.parse(decodeURIComponent(escape(atob(hash))));
-  } catch (e) {
-    return null;
-  }
+// ============================================================
+// 拡張機能との通信
+// ============================================================
+
+let currentRequestId = null;
+let extensionVersion = null;
+
+function genRequestId() {
+  return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-// ============================================================
-// ブックマークレット生成
-// ============================================================
+// 拡張機能が存在するか検出（PINGを送って500ms待つ）
+function detectExtension() {
+  return new Promise(resolve => {
+    const requestId = genRequestId();
+    let resolved = false;
 
-function setupBookmarklet() {
-  const reportUrl = new URL('', window.location.href).href;
+    const handler = (event) => {
+      if (event.source !== window) return;
+      const d = event.data;
+      if (!d || d.source !== EXT_TAG) return;
+      if (d.type === 'EXT_READY' || (d.type === 'PONG' && d.requestId === requestId)) {
+        if (!resolved) {
+          resolved = true;
+          window.removeEventListener('message', handler);
+          extensionVersion = d.version;
+          resolve(true);
+        }
+      }
+    };
+    window.addEventListener('message', handler);
 
-  // ブックマークレット本体（再生方式 + setInterval）
-  // pause状態のシークではフレームが更新されないため、4倍速再生中に1秒ごとにフレームを取得する
-  const bookmarkletCode = 'javascript:' + encodeURIComponent(`(function(){
-  if(!location.hostname.includes('youtube.com')||!location.pathname.startsWith('/watch')){
-    alert('YouTubeの動画ページで実行してください');return;
-  }
-  var v=document.querySelector('video');
-  var player=document.querySelector('#movie_player');
-  if(!v||!v.duration){alert('動画が読み込まれていません。少し待ってから再度クリックしてください。');return;}
-  var REPORT_URL=${JSON.stringify(reportUrl)};
-  var ui=document.createElement('div');
-  ui.style.cssText='position:fixed;top:20px;right:20px;background:#fff;border:2px solid #3498db;border-radius:8px;padding:16px;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-family:sans-serif;min-width:280px;max-width:320px;';
-  ui.innerHTML='<h3 style="margin:0 0 8px 0;font-size:16px;color:#2c3e50;">🎬 動画クオリティ・チェック</h3><p id="ytq_msg" style="margin:4px 0;font-size:13px;color:#555;">準備中...</p><div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;margin:8px 0;"><div id="ytq_bar" style="height:100%;background:#3498db;width:0;transition:width .3s;"></div></div><div id="ytq_done" style="display:none;margin-top:12px;"><button id="ytq_view" style="display:block;width:100%;padding:10px;font-size:14px;background:#3498db;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">📊 詳細レポートを見る</button><button id="ytq_close" style="display:block;width:100%;padding:6px;margin-top:8px;font-size:12px;background:#fff;color:#888;border:1px solid #ddd;border-radius:4px;cursor:pointer;">閉じる</button></div>';
-  document.body.appendChild(ui);
-  var msg=function(t){ui.querySelector('#ytq_msg').textContent=t;};
-  var bar=function(p){ui.querySelector('#ytq_bar').style.width=p+'%';};
-  v.muted=true;
-  function setRate(r){if(player&&player.setPlaybackRate){try{player.setPlaybackRate(r);}catch(e){}}try{v.playbackRate=r;}catch(e){}}
-  function play(){if(player&&player.playVideo){try{player.playVideo();}catch(e){}}else{try{v.play();}catch(e){}}}
-  function pause(){if(player&&player.pauseVideo){try{player.pauseVideo();}catch(e){}}else{try{v.pause();}catch(e){}}}
-  function seek(t){if(player&&player.seekTo){try{player.seekTo(t,true);}catch(e){v.currentTime=t;}}else{v.currentTime=t;}}
-  seek(0);
-  setRate(4);
-  play();
-  msg('動画を再生して分析中...（4倍速・約45秒）');
-  var diffs=[];var prev=null;var idx=0;var targets=[];for(var t=0;t<=180;t++)targets.push(t);
-  var startTime=Date.now();var lastDoneTime=Date.now();var lastDone=0;
-  var captureFrame=function(){
-    var c=document.createElement('canvas');c.width=80;c.height=45;
-    var ctx=c.getContext('2d');
-    try{ctx.drawImage(v,0,0,80,45);}catch(e){return null;}
-    try{return ctx.getImageData(0,0,80,45).data;}catch(e){return null;}
-  };
-  var iv=setInterval(function(){
-    try{
-      if(idx>=targets.length||v.currentTime>185){
-        clearInterval(iv);pause();setRate(1);
-        if(diffs.length<5){msg('❌ 取得フレーム不足('+diffs.length+'). 動画を一度クリックしてから再度お試しください。');return;}
-        msg('✅ 解析完了 ('+diffs.length+'差分)');bar(100);
-        var titleEl=document.querySelector('h1.style-scope.ytd-watch-metadata, h1.title.ytd-video-primary-info-renderer, h1.ytd-watch-metadata');
-        var title=titleEl?titleEl.innerText.trim():(document.title.replace(/ - YouTube$/,''));
-        var vid=new URLSearchParams(location.search).get('v')||'';
-        var data={title:title,videoId:vid,diffs:diffs.map(function(d){return Math.round(d*100)/100;}),capturedAt:Date.now()};
-        var hash=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-        var fullUrl=REPORT_URL+'#'+hash;
-        ui.querySelector('#ytq_done').style.display='block';
-        ui.querySelector('#ytq_view').onclick=function(){window.open(fullUrl,'_blank');};
-        ui.querySelector('#ytq_close').onclick=function(){ui.remove();};
-        return;
-      }
-      // 進捗が止まっていないかチェック（タブ非アクティブ等で再生が止まる場合）
-      if(idx>lastDone){lastDone=idx;lastDoneTime=Date.now();}
-      else if(Date.now()-lastDoneTime>15000){
-        clearInterval(iv);pause();setRate(1);
-        msg('⚠️ 動画再生が止まりました。タブを最前面にして再度お試しください。');
-        return;
-      }
-      var tNow=v.currentTime;
-      while(idx<targets.length&&targets[idx]<=tNow){
-        var px=captureFrame();
-        if(!px){clearInterval(iv);msg('❌ フレーム取得失敗');return;}
-        if(prev){var s=0;for(var i=0;i<px.length;i+=4)s+=Math.abs(px[i]-prev[i])+Math.abs(px[i+1]-prev[i+1])+Math.abs(px[i+2]-prev[i+2]);diffs.push(s/(px.length/4*3));}
-        prev=px;idx++;
-        msg('解析中... '+idx+'/181');
-        bar(Math.round(idx/181*100));
-      }
-    }catch(e){clearInterval(iv);msg('エラー: '+e.message);}
-  },300);
-})();`);
+    window.postMessage({ target: EXT_TAG, type: 'PING', requestId }, '*');
 
-  const link = document.getElementById('bookmarklet-link');
-  if (link) link.href = bookmarkletCode;
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        window.removeEventListener('message', handler);
+        resolve(false);
+      }
+    }, EXT_DETECT_TIMEOUT);
+  });
+}
+
+function setupExtensionListener() {
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const d = event.data;
+    if (!d || d.source !== EXT_TAG) return;
+    if (!d.requestId || d.requestId !== currentRequestId) return;
+
+    if (d.type === 'PROGRESS') {
+      const pct = d.payload?.progress ?? 0;
+      const msg = d.payload?.message || '';
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('progress-percent').textContent = pct;
+      if (msg) document.getElementById('loading-message').textContent = msg;
+    } else if (d.type === 'RESULT') {
+      currentRequestId = null;
+      showResult(d.payload);
+    } else if (d.type === 'ERROR') {
+      currentRequestId = null;
+      showError(d.payload?.message || '不明なエラーが発生しました。');
+    }
+  });
+}
+
+function startAnalysis(channelUrl, videoUrl) {
+  currentRequestId = genRequestId();
+  showScreen('loading');
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('progress-percent').textContent = '0';
+  document.getElementById('loading-message').textContent = '処理を開始しています...';
+
+  window.postMessage({
+    target: EXT_TAG,
+    type: 'ANALYZE',
+    requestId: currentRequestId,
+    payload: { channelUrl, videoUrl },
+  }, '*');
 }
 
 // ============================================================
 // 起動
 // ============================================================
 
-function init() {
-  const data = decodeHashData();
-  if (data && Array.isArray(data.diffs) && data.diffs.length >= 5) {
-    showResult(data);
-  } else {
-    showScreen('input');
-    setupBookmarklet();
+function setupForm() {
+  document.getElementById('check-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const channelUrl = document.getElementById('channel-url').value.trim();
+    const videoUrl = document.getElementById('video-url').value.trim();
+    if (!channelUrl && !videoUrl) {
+      alert('チャンネルURLか動画URLのどちらか一方を入力してください');
+      return;
+    }
+    startAnalysis(channelUrl, videoUrl);
+  });
+}
+
+async function init() {
+  // 拡張機能の検出
+  const installed = await detectExtension();
+
+  if (!installed) {
+    // 未インストール → インストール案内画面
+    showScreen('install');
+    const btn = document.getElementById('install-btn');
+    if (btn) btn.href = CHROME_WEBSTORE_URL;
+    return;
   }
+
+  // インストール済み → 入力画面
+  showScreen('input');
+  const verEl = document.getElementById('ext-version');
+  if (verEl && extensionVersion) verEl.textContent = extensionVersion;
+
+  setupExtensionListener();
+  setupForm();
 }
 
 if (document.readyState === 'loading') {

@@ -496,70 +496,6 @@ input[type="url"]:focus {
   .action-buttons, .btn-primary { display: none; }
 }
 
-/* ===== ブックマークレット案内画面 ===== */
-
-.bookmarklet-section {
-  text-align: center;
-  margin: 30px 0;
-  padding: 30px 20px;
-  background: linear-gradient(135deg, #ebf3fb 0%, #d6e9f8 100%);
-  border-radius: 12px;
-  border: 2px dashed #3498db;
-}
-
-.bookmarklet-btn {
-  display: inline-block;
-  padding: 18px 32px;
-  font-size: 20px;
-  font-weight: bold;
-  color: white;
-  background: linear-gradient(135deg, #3498db, #2980b9);
-  border-radius: 8px;
-  text-decoration: none;
-  cursor: grab;
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
-  transition: transform 0.1s;
-}
-
-.bookmarklet-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(52, 152, 219, 0.4);
-}
-
-.bookmarklet-btn:active {
-  cursor: grabbing;
-}
-
-.section-title-mini {
-  font-size: 18px;
-  margin: 30px 0 12px;
-  color: #2c3e50;
-}
-
-.features-list {
-  list-style: none;
-  padding: 0;
-}
-
-.features-list li {
-  padding: 10px 0 10px 32px;
-  font-size: 16px;
-  color: #555;
-  position: relative;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.features-list li::before {
-  content: "✅";
-  position: absolute;
-  left: 0;
-  top: 10px;
-}
-
-.features-list li:last-child {
-  border-bottom: none;
-}
-
 .raw-stats {
   background: #f8f9fa;
   padding: 16px 20px;
@@ -571,4 +507,152 @@ input[type="url"]:focus {
 
 .raw-stats a {
   color: #3498db;
+}
+
+/* ===== 拡張機能インストール案内画面 ===== */
+
+.install-box {
+  padding: 30px 20px;
+  background: linear-gradient(135deg, #ebf3fb 0%, #d6e9f8 100%);
+  border-radius: 12px;
+  border: 2px solid #3498db;
+}
+
+.install-box h2 {
+  font-size: 24px;
+  color: #2c3e50;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.install-lead {
+  font-size: 16px;
+  color: #555;
+  line-height: 1.9;
+  margin-bottom: 30px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+}
+
+.install-steps {
+  margin: 30px 0;
+}
+
+.install-step {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.install-step-num {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  background: #3498db;
+  color: white;
+  font-size: 26px;
+  font-weight: bold;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 20px;
+}
+
+.install-step-body {
+  flex: 1;
+}
+
+.install-step-body h3 {
+  font-size: 18px;
+  color: #2c3e50;
+  margin-bottom: 8px;
+}
+
+.install-step-body p {
+  font-size: 15px;
+  color: #555;
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+
+.install-btn {
+  display: inline-block;
+  padding: 16px 32px;
+  font-size: 18px;
+  font-weight: bold;
+  color: white;
+  background: linear-gradient(135deg, #27ae60, #229954);
+  border: none;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+  transition: transform 0.1s;
+}
+
+.install-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(39, 174, 96, 0.4);
+}
+
+.install-faq {
+  margin-top: 16px;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  font-size: 15px;
+  color: #555;
+}
+
+.install-faq summary {
+  cursor: pointer;
+  font-weight: bold;
+  color: #2c3e50;
+  padding: 6px 0;
+  font-size: 16px;
+}
+
+.install-faq summary:hover {
+  color: #3498db;
+}
+
+.install-faq p,
+.install-faq ol {
+  margin-top: 12px;
+  line-height: 1.9;
+}
+
+.install-faq ol {
+  padding-left: 24px;
+}
+
+.install-faq li {
+  margin-bottom: 4px;
+}
+
+.install-faq code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+/* ===== 拡張機能ステータスバッジ ===== */
+
+.extension-status {
+  display: inline-block;
+  padding: 6px 14px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  border-radius: 16px;
 }

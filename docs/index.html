@@ -5,45 +5,127 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="YouTube動画の最初の180秒を1秒ごとに分析して、収益化審査の合格水準かを5段階で判定する無料Webツール">
 <title>動画クオリティ・チェッカー</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 
 <div class="container">
 
-  <!-- 入力画面（ブックマークレット利用案内） -->
-  <section id="input-screen" class="screen active">
-    <header class="hero">
-      <h1>🎬 動画クオリティ・チェッカー</h1>
-      <p class="lead">あなたの動画、収益化に通る品質ですか?</p>
-      <p class="sub">YouTube動画の最初の3分を分析して、合格水準かをお伝えします</p>
-    </header>
+  <!-- 共通ヘッダー -->
+  <header class="hero">
+    <h1>🎬 動画クオリティ・チェッカー</h1>
+    <p class="lead">あなたの動画、収益化に通る品質ですか?</p>
+    <p class="sub">YouTube動画の最初の3分を分析して、合格水準かをお伝えします</p>
+  </header>
+
+  <!-- A. 拡張機能未インストール時の案内画面 -->
+  <section id="install-screen" class="screen">
+    <div class="install-box">
+      <h2>📦 ご利用には拡張機能のインストールが必要です</h2>
+      <p class="install-lead">
+        このツールは、Chromeの拡張機能（無料・1クリック）を使ってあなたのChromeで安全にYouTube動画を分析します。<br>
+        <strong>サーバには動画データを送りません。</strong>
+      </p>
+
+      <div class="install-steps">
+        <div class="install-step">
+          <div class="install-step-num">1</div>
+          <div class="install-step-body">
+            <h3>下のボタンから拡張機能をインストール</h3>
+            <p>Chrome ウェブストアが新しいタブで開きます。「Chromeに追加」を押してください。</p>
+            <a id="install-btn" href="#" target="_blank" rel="noopener" class="btn-primary install-btn">
+              📥 拡張機能をインストール
+            </a>
+          </div>
+        </div>
+
+        <div class="install-step">
+          <div class="install-step-num">2</div>
+          <div class="install-step-body">
+            <h3>インストール後、このページを再読み込み</h3>
+            <p>下のボタンを押すと自動でこのページを再読み込みします。</p>
+            <button class="btn-secondary" onclick="location.reload()">🔄 ページを再読み込み</button>
+          </div>
+        </div>
+      </div>
+
+      <details class="install-faq">
+        <summary>❓ 拡張機能とは? 安全ですか?</summary>
+        <p>
+          Chrome拡張機能は、Chromeブラウザに小さな機能を追加する公式の仕組みです。<br>
+          このツールの拡張機能は <strong>あなたのChromeでYouTube動画を再生してフレームを測る</strong> ためだけに使われます。<br>
+          ・動画データを外部サーバに送ることはありません<br>
+          ・あなたのGoogleアカウント情報にもアクセスしません<br>
+          ・いつでも Chrome の拡張機能管理画面から削除できます
+        </p>
+      </details>
+
+      <details class="install-faq">
+        <summary>📖 詳しいインストール手順</summary>
+        <ol>
+          <li>「📥 拡張機能をインストール」ボタンを押す</li>
+          <li>Chrome ウェブストアのページが開く</li>
+          <li>「Chromeに追加」ボタンを押す</li>
+          <li>確認ダイアログで「拡張機能を追加」を押す</li>
+          <li>このページに戻って「🔄 ページを再読み込み」を押す</li>
+        </ol>
+      </details>
+
+      <details class="install-faq">
+        <summary>🛠 開発者モードで読み込む（公開前テスト用）</summary>
+        <ol>
+          <li>Chromeのアドレスバーに <code>chrome://extensions/</code> を入力</li>
+          <li>右上の「デベロッパーモード」をオンにする</li>
+          <li>「パッケージ化されていない拡張機能を読み込む」をクリック</li>
+          <li>このリポジトリの <code>extension/</code> フォルダを選択</li>
+          <li>このページに戻って再読み込み</li>
+        </ol>
+      </details>
+    </div>
+  </section>
+
+  <!-- B. 入力画面（拡張機能インストール済み） -->
+  <section id="input-screen" class="screen">
+    <div class="extension-status">
+      ✅ 拡張機能インストール済み（v<span id="ext-version">--</span>）
+    </div>
 
     <div class="instruction-box">
       <p class="instruction-text">
-        <strong>使い方は3ステップ</strong>
+        <strong>下のどちらか1つを入力してください</strong>
       </p>
       <p class="instruction-sub">
-        1. 下のリンクをブラウザのブックマークバーに<strong>ドラッグ</strong>して登録<br>
-        2. 分析したい<strong>YouTube動画ページを開く</strong>（推奨：3ヶ月以上前の動画）<br>
-        3. 登録したブックマークを<strong>クリック</strong> → 約4分待つ → 「📊 詳細レポートを見る」ボタンを押す
+        ・チャンネル全体を見たい場合 → チャンネルURL（最新動画をチェックします）<br>
+        ・特定の動画を見たい場合 → 動画URL
       </p>
     </div>
 
-    <div class="bookmarklet-section">
-      <a id="bookmarklet-link" href="#" onclick="alert('このリンクはブックマークバーへドラッグして使ってください'); return false;" class="btn-primary bookmarklet-btn">
-        📌 動画クオリティチェック（ドラッグして保存）
-      </a>
-      <p class="hint">↑ このボタンをブックマークバーへドラッグしてください（クリックでは動きません）</p>
-    </div>
+    <form id="check-form" class="form">
+      <div class="field">
+        <label for="channel-url">① チャンネルURL</label>
+        <input type="url" id="channel-url" name="channel-url"
+               placeholder="https://www.youtube.com/@your-channel">
+        <p class="hint">※ チャンネルのトップページのURLを貼り付けてください</p>
+      </div>
 
-    <h3 class="section-title-mini">📋 結果でわかること</h3>
-    <ul class="features-list">
-      <li>合格水準の総合スコア（100点満点）</li>
-      <li>5項目スコア（動きのバランス／止まっている時間／場面切替／動きの種類／集中度）</li>
-      <li>5段階判定（合格水準・ほぼ合格・もうすぐ合格・要改善・大幅作り直しが必要）</li>
-      <li>優先度付きの具体的な改善アクション（最大3件）</li>
-    </ul>
+      <div class="or-divider">または</div>
+
+      <div class="field">
+        <label for="video-url">② 動画URL</label>
+        <input type="url" id="video-url" name="video-url"
+               placeholder="https://youtu.be/xxxxxxxx">
+        <p class="hint">※ 特定の動画をチェックしたい場合はこちら</p>
+      </div>
+
+      <button type="submit" class="btn-primary" id="submit-btn">
+        チェックを始める
+      </button>
+
+      <p class="note">
+        ※ チェックには1〜2分ほどかかります。<br>
+        ※ 分析中は新しいタブが自動で開きますが、終了後に自動で閉じます。
+      </p>
+    </form>
 
     <footer class="disclaimer">
       <h3>大事なお知らせ</h3>
@@ -61,7 +143,23 @@
     </footer>
   </section>
 
-  <!-- 結果画面 -->
+  <!-- C. 分析中画面 -->
+  <section id="loading-screen" class="screen">
+    <div class="loading">
+      <h2>⏳ チェック中です</h2>
+      <p class="loading-message" id="loading-message">処理を開始しています...</p>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <p class="progress-text"><span id="progress-percent">0</span>%</p>
+      <p class="loading-note">
+        ※ 別タブでYouTube動画を開いて分析しています<br>
+        ※ 分析中はそのタブを操作しないでください
+      </p>
+    </div>
+  </section>
+
+  <!-- D. 結果画面 -->
   <section id="result-screen" class="screen">
     <header class="result-header">
       <h2>📊 チェック結果</h2>
@@ -92,7 +190,7 @@
 
     <div class="action-buttons">
       <button class="btn-secondary" onclick="window.print()">🖨️ 印刷する</button>
-      <button class="btn-secondary" onclick="location.hash=''; location.reload();">🔄 トップに戻る</button>
+      <button class="btn-secondary" onclick="location.hash=''; location.reload();">🔄 もう一度チェックする</button>
     </div>
 
     <footer class="result-footer">
@@ -103,7 +201,7 @@
     </footer>
   </section>
 
-  <!-- エラー画面 -->
+  <!-- E. エラー画面 -->
   <section id="error-screen" class="screen">
     <div class="error-box">
       <h2>❌ エラーが発生しました</h2>
@@ -114,6 +212,6 @@
 
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
