@@ -495,3 +495,80 @@ input[type="url"]:focus {
   .container { box-shadow: none; }
   .action-buttons, .btn-primary { display: none; }
 }
+
+/* ===== ブックマークレット案内画面 ===== */
+
+.bookmarklet-section {
+  text-align: center;
+  margin: 30px 0;
+  padding: 30px 20px;
+  background: linear-gradient(135deg, #ebf3fb 0%, #d6e9f8 100%);
+  border-radius: 12px;
+  border: 2px dashed #3498db;
+}
+
+.bookmarklet-btn {
+  display: inline-block;
+  padding: 18px 32px;
+  font-size: 20px;
+  font-weight: bold;
+  color: white;
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: grab;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+  transition: transform 0.1s;
+}
+
+.bookmarklet-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(52, 152, 219, 0.4);
+}
+
+.bookmarklet-btn:active {
+  cursor: grabbing;
+}
+
+.section-title-mini {
+  font-size: 18px;
+  margin: 30px 0 12px;
+  color: #2c3e50;
+}
+
+.features-list {
+  list-style: none;
+  padding: 0;
+}
+
+.features-list li {
+  padding: 10px 0 10px 32px;
+  font-size: 16px;
+  color: #555;
+  position: relative;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.features-list li::before {
+  content: "✅";
+  position: absolute;
+  left: 0;
+  top: 10px;
+}
+
+.features-list li:last-child {
+  border-bottom: none;
+}
+
+.raw-stats {
+  background: #f8f9fa;
+  padding: 16px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #666;
+  line-height: 2;
+}
+
+.raw-stats a {
+  color: #3498db;
+}
