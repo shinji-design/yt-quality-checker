@@ -44,22 +44,91 @@ async def get_latest_video_id(channel_url: str):
     return matches[0] if matches else None
 
 
-async def fetch_player_response(video_id: str):
-    """YouTube動画ページから ytInitialPlayerResponse を取得"""
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        r = await client.get(url, headers=HEADERS)
-        html = r.text
+COOKIES = {"CONSENT": "YES+cb", "PREF": "hl=ja&gl=JP"}
 
-    m = re.search(r'var ytInitialPlayerResponse\s*=\s*(\{.+?\});', html)
-    if not m:
-        m = re.search(r'ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*var', html)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return None
+
+def extract_player_response(html: str):
+    """HTML中の ytInitialPlayerResponse を波括弧マッチングで抽出する。
+
+    非貪欲regex `\\{.+?\\}` は JSON 内部の `};` 等で誤マッチするため、
+    `{` の出現位置から手動で深さを追い、文字列リテラルとエスケープを
+    考慮して対応する `}` まで切り出す。
+    """
+    markers = [
+        'var ytInitialPlayerResponse = ',
+        'ytInitialPlayerResponse = ',
+        '"ytInitialPlayerResponse":',
+    ]
+    for marker in markers:
+        pos = 0
+        while True:
+            idx = html.find(marker, pos)
+            if idx == -1:
+                break
+            start = idx + len(marker)
+            while start < len(html) and html[start] != '{':
+                start += 1
+            if start >= len(html):
+                break
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(html)):
+                c = html[i]
+                if esc:
+                    esc = False
+                    continue
+                if in_str:
+                    if c == '\\':
+                        esc = True
+                    elif c == '"':
+                        in_str = False
+                    continue
+                if c == '"':
+                    in_str = True
+                elif c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(html[start:i + 1])
+                        except json.JSONDecodeError:
+                            pos = idx + 1
+                            break
+            else:
+                break
+    return None
+
+
+async def fetch_player_response(video_id: str):
+    """YouTube動画ページから ytInitialPlayerResponse を取得。
+
+    通常のwatchページでstoryboardが取れない場合（地域・consent等で
+    省略されるケース）はembedページにフォールバックする。
+    """
+    headers = {**HEADERS, "Cookie": "; ".join(f"{k}={v}" for k, v in COOKIES.items())}
+    urls = [
+        f"https://www.youtube.com/watch?v={video_id}&hl=ja&gl=JP",
+        f"https://www.youtube.com/embed/{video_id}?hl=ja",
+    ]
+    last = None
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        for url in urls:
+            try:
+                r = await client.get(url, headers=headers)
+            except Exception:
+                continue
+            if r.status_code != 200:
+                continue
+            response = extract_player_response(r.text)
+            if not response:
+                continue
+            last = response
+            sb = response.get('storyboards', {}).get('playerStoryboardSpecRenderer', {})
+            if sb.get('spec'):
+                return response
+    return last
 
 
 def parse_storyboard_spec(spec: str):
