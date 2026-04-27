@@ -10,23 +10,49 @@ CAPTURE_SCRIPT = """
 async () => {
     const player = document.querySelector('#movie_player');
     const v = document.querySelector('video');
-    if (!player || !v) return {error: 'プレーヤーが見つかりません'};
+    if (!player || !v) return {error: 'プレーヤーが見つかりません', debug: {hasPlayer: !!player, hasVideo: !!v}};
+
+    // 初期診断情報
+    const initDiag = {
+        videoDuration: v.duration,
+        videoReadyState: v.readyState,
+        videoNetworkState: v.networkState,
+        videoSrc: v.src ? 'has-src' : 'no-src',
+        videoWidth: v.videoWidth,
+        videoHeight: v.videoHeight,
+        playerExists: typeof player.playVideo === 'function',
+    };
 
     try { player.mute(); } catch(e) {}
     try { v.muted = true; } catch(e) {}
 
+    let playError = null;
     try {
         player.setPlaybackRate(2);
         player.playVideo();
-        await new Promise(r => setTimeout(r, 2500));
-    } catch(e) {}
+        await new Promise(r => setTimeout(r, 3000));
+    } catch(e) { playError = 'phase1:' + e.message; }
 
     try {
         player.seekTo(0);
         player.setPlaybackRate(4);
-        player.playVideo();
+        const playPromise = v.play();
+        if (playPromise) await playPromise.catch(e => { playError = 'phase2:' + e.message; });
     } catch(e) {
-        return {error: '動画再生に失敗しました'};
+        return {error: '動画再生に失敗: ' + e.message, debug: initDiag};
+    }
+
+    await new Promise(r => setTimeout(r, 2000));
+    const playDiag = {
+        currentTime: v.currentTime,
+        paused: v.paused,
+        ended: v.ended,
+        playError: playError,
+        readyStateAfter: v.readyState,
+    };
+
+    if (v.currentTime === 0 && v.paused) {
+        return {error: '動画が再生されません', debug: {init: initDiag, play: playDiag}};
     }
 
     return new Promise((resolve) => {
