@@ -351,8 +351,15 @@ async def analyze_video(channel_url: str, video_url: str):
         )
         context = await browser.new_context(
             viewport={'width': 1280, 'height': 720},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            locale='ja-JP'
         )
+        # YouTubeのCookie同意を回避するためのCookieをプリセット
+        await context.add_cookies([
+            {'name': 'CONSENT', 'value': 'YES+', 'domain': '.youtube.com', 'path': '/'},
+            {'name': 'SOCS', 'value': 'CAI', 'domain': '.youtube.com', 'path': '/'},
+            {'name': 'PREF', 'value': 'hl=ja&gl=JP', 'domain': '.youtube.com', 'path': '/'},
+        ])
         page = await context.new_page()
 
         try:
@@ -376,6 +383,13 @@ async def analyze_video(channel_url: str, video_url: str):
                 wait_until="domcontentloaded",
                 timeout=30000
             )
+
+            # #movie_player要素が出現するのを待つ（最大15秒）
+            try:
+                await page.wait_for_selector('#movie_player', timeout=15000)
+            except:
+                pass
+
             await page.wait_for_timeout(5000)
 
             try:
