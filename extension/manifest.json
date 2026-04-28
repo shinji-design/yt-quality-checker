@@ -9,9 +9,7 @@
   ],
   "host_permissions": [
     "https://*.youtube.com/*",
-    "https://shinji-design.github.io/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
+    "https://shinji-design.github.io/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -19,9 +17,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://shinji-design.github.io/yt-quality-checker/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
+        "https://shinji-design.github.io/yt-quality-checker/*"
       ],
       "js": ["content-page.js"],
       "run_at": "document_start"
